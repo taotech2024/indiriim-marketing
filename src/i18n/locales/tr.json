@@ -1,0 +1,13 @@
+{
+  "auth": {
+    "signIn": "Giriş Yap",
+    "email": "E-posta",
+    "password": "Parola",
+    "pleaseEnterCredentials": "Lütfen e-posta ve parola girin",
+    "invalidEmailFormat": "Geçerli bir e-posta adresi girin",
+    "loginFailed": "Giriş başarısız",
+    "loggingIn": "Giriş yapılıyor...",
+    "allRightsReserved": "Tüm hakları saklıdır"
+  }
+}
+

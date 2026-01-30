@@ -1,0 +1,13 @@
+{
+  "auth": {
+    "signIn": "Sign In",
+    "email": "Email",
+    "password": "Password",
+    "pleaseEnterCredentials": "Please enter your email and password",
+    "invalidEmailFormat": "Please enter a valid email address",
+    "loginFailed": "Login failed",
+    "loggingIn": "Signing in...",
+    "allRightsReserved": "All rights reserved"
+  }
+}
+
