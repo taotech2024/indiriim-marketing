@@ -1,11 +1,46 @@
-import React, { useMemo, useState } from 'react';
-import { Box, Button, Tab, Tabs, TextField, Typography, Stack, Chip } from '@mui/material';
+import React, { useMemo, useState, useEffect } from 'react';
+import {
+  Box,
+  Button,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
+  Stack,
+  Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  IconButton,
+  Tooltip,
+  Alert,
+  CircularProgress
+} from '@mui/material';
 import RichTextEditor from '../components/Common/RichTextEditor';
+import TablerIcon from '../components/Common/TablerIcon';
+import {
+  fetchTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  type TemplateItem,
+  type TemplateType
+} from '../api/templates';
 
 type TemplateChannel = 'EMAIL' | 'SMS' | 'PUSH';
 
 const TemplatesPage: React.FC = () => {
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<TemplateItem | null>(null);
+  const [saveLoading, setSaveLoading] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TemplateChannel>('EMAIL');
+  const [name, setName] = useState('');
+  const [subject, setSubject] = useState('');
   const [mailContent, setMailContent] = useState('');
   const [smsContent, setSmsContent] = useState('');
   const [pushTitle, setPushTitle] = useState('');
@@ -18,6 +53,32 @@ const TemplatesPage: React.FC = () => {
     { label: 'İptal', actionId: 'cancel' }
   ]);
 
+  useEffect(() => {
+    fetchTemplates()
+      .then(setTemplates)
+      .catch(() => setError('Şablon listesi yüklenemedi.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (selected) {
+      setName(selected.name);
+      setActiveTab(selected.type as TemplateChannel);
+      setSubject(selected.subject ?? '');
+      setMailContent(selected.type === 'EMAIL' ? (selected.content ?? '') : '');
+      setSmsContent(selected.type === 'SMS' ? (selected.content ?? '') : '');
+      setPushBody(selected.type === 'PUSH' ? (selected.content ?? '') : '');
+      setPushTitle('');
+    } else {
+      setName('');
+      setSubject('');
+      setMailContent('');
+      setSmsContent('');
+      setPushBody('');
+      setPushTitle('');
+    }
+  }, [selected]);
+
   const smsLength = smsContent.length;
   const smsParts = useMemo(() => {
     if (smsLength === 0) return 0;
@@ -28,6 +89,56 @@ const TemplatesPage: React.FC = () => {
     setPushActions(prev => [...prev, { label: `Aksiyon ${prev.length + 1}`, actionId: `action_${prev.length + 1}` }]);
   };
 
+  const getContentForType = (): string => {
+    if (activeTab === 'EMAIL') return mailContent;
+    if (activeTab === 'SMS') return smsContent;
+    return pushTitle ? `${pushTitle}\n${pushBody}` : pushBody;
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('Template adı gerekli.');
+      return;
+    }
+    setError(null);
+    setSaveLoading(true);
+    try {
+      const body = {
+        name: name.trim(),
+        type: activeTab as TemplateType,
+        subject: activeTab === 'EMAIL' ? subject : undefined,
+        content: getContentForType() || undefined,
+        isActive: true
+      };
+      if (selected) {
+        const updated = await updateTemplate(selected.id, body);
+        setTemplates(prev => prev.map(p => (p.id === updated.id ? updated : p)));
+        setSelected(updated);
+      } else {
+        const created = await createTemplate(body);
+        setTemplates(prev => [...prev, created]);
+        setSelected(created);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        ?? (err instanceof Error ? err.message : 'Kaydetme başarısız.');
+      setError(msg);
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Bu şablonu silmek istediğinize emin misiniz?')) return;
+    try {
+      await deleteTemplate(id);
+      setTemplates(prev => prev.filter(p => p.id !== id));
+      if (selected?.id === id) setSelected(null);
+    } catch {
+      setError('Silme başarısız.');
+    }
+  };
+
   return (
     <Box sx={{ width: '100%' }}>
       <Typography variant="h5" sx={{ mb: 1.5, fontWeight: 600 }}>
@@ -36,6 +147,66 @@ const TemplatesPage: React.FC = () => {
       <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
         Mail, SMS ve push bildirimleri için tekrar kullanılabilir template&apos;leri yönet.
       </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Şablonlar</Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<TablerIcon name="Plus" size="sm" />}
+          onClick={() => setSelected(null)}
+        >
+          Yeni Şablon
+        </Button>
+      </Box>
+      {loading ? (
+        <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <Table size="small" sx={{ mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 600 }}>Ad</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Tür</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Konu</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Durum</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 600 }}>İşlem</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {templates.map((t) => (
+              <TableRow
+                key={t.id}
+                hover
+                selected={selected?.id === t.id}
+                onClick={() => setSelected(t)}
+                sx={{ cursor: 'pointer' }}
+              >
+                <TableCell>{t.name}</TableCell>
+                <TableCell>{t.type}</TableCell>
+                <TableCell>{t.subject ?? '—'}</TableCell>
+                <TableCell>
+                  <Chip label={t.isActive ? 'Aktif' : 'Pasif'} size="small" color={t.isActive ? 'success' : 'default'} variant="outlined" />
+                </TableCell>
+                <TableCell align="right" onClick={e => e.stopPropagation()}>
+                  <Tooltip title="Sil">
+                    <IconButton size="small" color="error" onClick={() => handleDelete(t.id)}>
+                      <TablerIcon name="Trash" size="sm" />
+                    </IconButton>
+                  </Tooltip>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
 
       <Tabs
         value={activeTab}
@@ -51,8 +222,8 @@ const TemplatesPage: React.FC = () => {
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 3 }}>
           <Box>
             <Stack spacing={2}>
-              <TextField label="Template adı" fullWidth size="small" />
-              <TextField label="Konu" fullWidth size="small" placeholder="Global ayarlardan gelebilir" />
+              <TextField label="Template adı" fullWidth size="small" value={name} onChange={e => setName(e.target.value)} />
+              <TextField label="Konu" fullWidth size="small" placeholder="Global ayarlardan gelebilir" value={subject} onChange={e => setSubject(e.target.value)} />
               <RichTextEditor
                 value={mailContent}
                 onChange={setMailContent}
@@ -74,11 +245,10 @@ const TemplatesPage: React.FC = () => {
               Aksiyonlar
             </Typography>
             <Stack direction="row" spacing={1}>
-              <Button variant="outlined" size="small">
-                Preview
-              </Button>
-              <Button variant="contained" size="small">
-                Test Mail Gönder
+              <Button variant="outlined" size="small">Preview</Button>
+              <Button variant="contained" size="small">Test Mail Gönder</Button>
+              <Button variant="contained" size="small" disabled={saveLoading} onClick={handleSave}>
+                {saveLoading ? <CircularProgress size={20} /> : 'Kaydet'}
               </Button>
             </Stack>
           </Box>
@@ -89,7 +259,7 @@ const TemplatesPage: React.FC = () => {
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' }, gap: 3 }}>
           <Box>
             <Stack spacing={2}>
-              <TextField label="Template adı" fullWidth size="small" />
+              <TextField label="Template adı" fullWidth size="small" value={name} onChange={e => setName(e.target.value)} />
               <TextField
                 label="SMS içeriği"
                 fullWidth
@@ -145,6 +315,9 @@ const TemplatesPage: React.FC = () => {
                 </Typography>
               </Box>
             </Box>
+            <Button variant="contained" size="small" disabled={saveLoading} onClick={handleSave} sx={{ mt: 2 }}>
+              {saveLoading ? <CircularProgress size={20} /> : 'Kaydet'}
+            </Button>
           </Box>
         </Box>
       )}
@@ -293,6 +466,9 @@ const TemplatesPage: React.FC = () => {
                 )}
               </Box>
             </Box>
+            <Button variant="contained" size="small" disabled={saveLoading} onClick={handleSave} sx={{ mt: 2 }}>
+              {saveLoading ? <CircularProgress size={20} /> : 'Kaydet'}
+            </Button>
           </Box>
         </Box>
       )}

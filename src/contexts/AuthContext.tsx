@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { sessionManager, User, UserRole } from '../utils/sessionManager';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { sessionManager, User } from '../utils/sessionManager';
+import * as authApi from '../api/auth';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -23,14 +24,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const resolveRole = (email: string): UserRole => {
-  const lower = email.toLowerCase();
-  if (lower.includes('admin')) return 'ADMIN';
-  if (lower.includes('owner')) return 'PROJECT_OWNER';
-  if (lower.includes('manager')) return 'MARKETING_MANAGER';
-  return 'MARKETING_STAFF';
-};
-
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -38,7 +31,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const session = sessionManager.getSession();
-    if (session) {
+    const token = sessionManager.getToken();
+    if (session && token) {
       setUser(session.user);
       setIsAuthenticated(true);
     }
@@ -48,26 +42,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string) => {
     setLoading(true);
     try {
-      const role = resolveRole(email);
-      const mockUser: User = {
-        id: 1,
-        name: 'Notification Admin',
-        email,
-        role
-      };
-      sessionManager.saveSession(mockUser);
-      setUser(mockUser);
+      const { token, refreshToken: refreshTokenValue, user: userData } = await authApi.login(email, password);
+      sessionManager.saveSession(userData, token, refreshTokenValue);
+      setUser(userData);
       setIsAuthenticated(true);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message ??
+        (err instanceof Error ? err.message : 'Giriş başarısız.');
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    const refreshTokenValue = sessionManager.getRefreshToken();
+    if (refreshTokenValue) {
+      authApi.logout(refreshTokenValue).catch(() => {});
+    }
     sessionManager.clearSession();
     setUser(null);
     setIsAuthenticated(false);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider

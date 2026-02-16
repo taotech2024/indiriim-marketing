@@ -1,64 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Typography, Chip, IconButton, Tooltip, Stack } from '@mui/material';
+import { Box, Button, Typography, Chip, IconButton, Tooltip, Alert } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import SkeletonTable from '../components/Common/SkeletonTable';
 import TablerIcon from '../components/Common/TablerIcon';
+import {
+  fetchNotifications,
+  type NotificationItem,
+  type NotificationStatus
+} from '../api/notifications';
 
-type NotificationChannel = 'EMAIL' | 'SMS' | 'PUSH';
-
-type NotificationStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'SENT';
-
-interface NotificationItem {
-  id: number;
-  name: string;
-  channel: NotificationChannel;
-  segment: string;
-  status: NotificationStatus;
-  scheduledAt: string;
-}
-
-const mockNotifications: NotificationItem[] = [
-  {
-    id: 1,
-    name: 'Haftalık indirim maili',
-    channel: 'EMAIL',
-    segment: 'Aktif B2C müşteriler',
-    status: 'SCHEDULED',
-    scheduledAt: '2025-01-18 10:00'
-  },
-  {
-    id: 2,
-    name: 'Sepeti terk edenlere SMS',
-    channel: 'SMS',
-    segment: 'Sepeti terk edenler',
-    status: 'PENDING_APPROVAL',
-    scheduledAt: '2025-01-18 11:30'
-  },
-  {
-    id: 3,
-    name: 'Uygulama kampanya bildirimi',
-    channel: 'PUSH',
-    segment: 'Aktif B2B iş ortakları',
-    status: 'DRAFT',
-    scheduledAt: 'Planlanmadı'
-  },
-  {
-    id: 4,
-    name: 'Yeni üyelik hoşgeldin serisi',
-    channel: 'EMAIL',
-    segment: 'Yeni Üyeler',
-    status: 'SENT',
-    scheduledAt: '2025-01-15 09:00'
-  }
-];
-
-const getStatusColor = (status: NotificationStatus): "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" => {
+const getStatusColor = (status: NotificationStatus): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
   switch (status) {
     case 'DRAFT': return 'default';
     case 'PENDING_APPROVAL': return 'warning';
     case 'SCHEDULED': return 'info';
+    case 'PROCESSING': return 'primary';
     case 'SENT': return 'success';
+    case 'FAILED': return 'error';
     default: return 'default';
   }
 };
@@ -68,20 +27,38 @@ const getStatusLabel = (status: NotificationStatus) => {
     case 'DRAFT': return 'Taslak';
     case 'PENDING_APPROVAL': return 'Onay Bekliyor';
     case 'SCHEDULED': return 'Planlandı';
+    case 'PROCESSING': return 'İşleniyor';
     case 'SENT': return 'Gönderildi';
+    case 'FAILED': return 'Başarısız';
     default: return status;
   }
 };
 
 const NotificationsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 800);
-    return () => clearTimeout(timeout);
+    let cancelled = false;
+    setError(null);
+    setLoading(true);
+    fetchNotifications()
+      .then((list) => {
+        if (!cancelled) setNotifications(list);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err.response?.data?.message ?? err.message ?? 'Liste yüklenemedi.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const columns = useMemo<MRT_ColumnDef<NotificationItem>[]>(
@@ -110,7 +87,8 @@ const NotificationsPage: React.FC = () => {
       },
       {
         header: 'Segment',
-        accessorKey: 'segment'
+        id: 'segment',
+        accessorFn: (row) => row.segmentName ?? row.segment ?? '—'
       },
       {
         header: 'Durum',
@@ -129,24 +107,12 @@ const NotificationsPage: React.FC = () => {
       },
       {
         header: 'Planlanan Gönderim',
-        accessorKey: 'scheduledAt'
+        accessorKey: 'scheduledAt',
+        accessorFn: (row) => row.scheduledAt ?? '—'
       }
     ],
     []
   );
-
-  if (loading) {
-    return (
-      <Box sx={{ width: '100%' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-            Kampanya Yönetimi
-          </Typography>
-        </Box>
-        <SkeletonTable rows={8} columns={5} />
-      </Box>
-    );
-  }
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -167,10 +133,19 @@ const NotificationsPage: React.FC = () => {
           Yeni Kampanya
         </Button>
       </Box>
-      
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <SkeletonTable rows={8} columns={5} />
+      ) : (
       <MaterialReactTable
         columns={columns}
-        data={mockNotifications}
+        data={notifications}
         enableColumnActions={false}
         enableColumnFilters={true}
         enableDensityToggle={false}
@@ -219,6 +194,7 @@ const NotificationsPage: React.FC = () => {
           }
         }}
       />
+      )}
     </Box>
   );
 };

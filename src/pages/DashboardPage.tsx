@@ -15,6 +15,8 @@ import {
 import TablerIcon from '../components/Common/TablerIcon';
 import { useAuth } from '../contexts/AuthContext';
 import type { UserRole } from '../utils/sessionManager';
+import { canManage } from '../utils/roleUtils';
+import { fetchDashboardSummary, type DashboardSummary } from '../api/dashboard';
 
 interface QuickAction {
   id: string;
@@ -104,10 +106,10 @@ const getQuickActionsForRole = (role?: UserRole | null): QuickAction[] => {
   ];
 
   if (!role) return adminAndManager;
-  if (role === 'ADMIN' || role === 'PROJECT_OWNER' || role === 'MARKETING_MANAGER') {
+  if (role === 'ADMIN' || role === 'PROJECT_OWNER' || role === 'MARKETING_MANAGER' || role === 'MARKETING') {
     return adminAndManager;
   }
-  if (role === 'MARKETING_STAFF') {
+  if (role === 'MARKETING_STAFF' || role === 'READ_ONLY' || role === 'USER') {
     return marketingStaff;
   }
   return adminAndManager;
@@ -147,14 +149,18 @@ const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
   useEffect(() => {
-    // Simulate data fetching delay
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    fetchDashboardSummary()
+      .then(setSummary)
+      .catch(() => setSummary({
+        draftCount: 0,
+        scheduledCount: 0,
+        sentCount: 0,
+        lastNotifications: []
+      }))
+      .finally(() => setLoading(false));
   }, []);
 
   const quickActions = React.useMemo(
@@ -463,21 +469,32 @@ const DashboardPage: React.FC = () => {
               ))
             : [
             { 
-              label: 'Bekleyen Şikayet', 
-              value: '14', 
-              icon: 'AlertTriangle', 
-              change: '2 Yeni', 
-              color: 'error.main',
-              badgeColor: 'error.main',
-              badgeBg: 'rgba(255, 82, 82, 0.1)',
-              link: '/complaints',
-              buttonText: 'Şikayetleri görüntüle'
+              label: 'Taslak Kampanyalar', 
+              value: String(summary?.draftCount ?? 0), 
+              icon: 'Templates' as const, 
+              change: '', 
+              color: 'text.secondary',
+              badgeColor: 'text.secondary',
+              badgeBg: 'rgba(0,0,0,0.04)',
+              link: '/notifications',
+              buttonText: 'Görüntüle'
             },
             { 
-              label: 'Aktif Kampanyalar', 
-              value: '8', 
-              icon: 'Speakerphone', 
-              change: '2 yeni', 
+              label: 'Planlanan Kampanyalar', 
+              value: String(summary?.scheduledCount ?? 0), 
+              icon: 'Speakerphone' as const, 
+              change: '', 
+              color: 'info.main',
+              badgeColor: 'info.main',
+              badgeBg: 'rgba(25, 118, 210, 0.1)',
+              link: '/notifications',
+              buttonText: 'Görüntüle'
+            },
+            { 
+              label: 'Gönderilen', 
+              value: String(summary?.sentCount ?? 0), 
+              icon: 'Send' as const, 
+              change: '', 
               color: 'success.main',
               badgeColor: 'success.main',
               badgeBg: 'rgba(52, 199, 89, 0.1)',
@@ -485,26 +502,15 @@ const DashboardPage: React.FC = () => {
               buttonText: 'Görüntüle'
             },
             { 
-              label: 'Aylık Gönderim', 
-              value: '850K', 
-              icon: 'Send', 
-              change: '%85 limit', 
-              color: 'warning.main',
-              badgeColor: 'warning.main',
-              badgeBg: 'rgba(255, 179, 0, 0.1)',
-              link: '/reports',
-              buttonText: 'Raporu görüntüle'
-            },
-            { 
-              label: 'Ort. Açılma Oranı', 
-              value: '%24.8', 
-              icon: 'ChartBar', 
-              change: '+2.1%', 
-              color: 'info.main',
-              badgeColor: 'success.main',
-              badgeBg: 'rgba(52, 199, 89, 0.1)',
-              link: '/reports',
-              buttonText: 'Raporu görüntüle'
+              label: 'Son Kampanyalar', 
+              value: String(summary?.lastNotifications?.length ?? 0), 
+              icon: 'ChartBar' as const, 
+              change: '', 
+              color: 'primary.main',
+              badgeColor: 'primary.main',
+              badgeBg: 'rgba(82, 70, 229, 0.1)',
+              link: '/notifications',
+              buttonText: 'Liste'
             }
           ].map((stat, index) => (
             <Box 
@@ -531,19 +537,21 @@ const DashboardPage: React.FC = () => {
                 >
                   <TablerIcon name={stat.icon} size="md" />
                 </Box>
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    color: stat.badgeColor, 
-                    fontWeight: 600, 
-                    bgcolor: stat.badgeBg, 
-                    px: 1, 
-                    py: 0.5, 
-                    borderRadius: 0 
-                  }}
-                >
-                  {stat.change}
-                </Typography>
+                {stat.change ? (
+                  <Typography 
+                    variant="caption" 
+                    sx={{ 
+                      color: stat.badgeColor, 
+                      fontWeight: 600, 
+                      bgcolor: stat.badgeBg, 
+                      px: 1, 
+                      py: 0.5, 
+                      borderRadius: 0 
+                    }}
+                  >
+                    {stat.change}
+                  </Typography>
+                ) : null}
               </Box>
               <Box>
                 <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
@@ -591,7 +599,7 @@ const DashboardPage: React.FC = () => {
                 display: 'grid', 
                 gridTemplateColumns: { 
                   xs: '1fr', 
-                  md: (user?.role === 'ADMIN' || user?.role === 'MARKETING_MANAGER' || user?.role === 'PROJECT_OWNER') ? '1fr 1fr' : '1fr' 
+                  md: canManage(user?.role) ? '1fr 1fr' : '1fr' 
                 }, 
                 gap: '1px',
                 bgcolor: 'divider',
@@ -599,7 +607,7 @@ const DashboardPage: React.FC = () => {
               }}
             >
               {/* Quota Status - Admin & Marketing Manager */}
-              {(user?.role === 'ADMIN' || user?.role === 'MARKETING_MANAGER' || user?.role === 'PROJECT_OWNER') && (
+              {canManage(user?.role) && (
                 <Box sx={{ bgcolor: 'background.paper', borderRadius: 0, p: 2.5, height: '100%' }}>
                   <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                     {loading ? <Skeleton width={180} /> : 'Maliyet ve Kota'}
@@ -679,7 +687,7 @@ const DashboardPage: React.FC = () => {
             </Box>
 
             {/* Channel Performance Chart - Admin & Marketing Manager Only */}
-            {(user?.role === 'ADMIN' || user?.role === 'MARKETING_MANAGER' || user?.role === 'PROJECT_OWNER') && (
+            {canManage(user?.role) && (
               <Box sx={{ order: { xs: 2, lg: 'unset' }, mb: 0, bgcolor: 'background.paper', borderRadius: 0, p: 3, display: { xs: 'none', sm: 'block' } }}>
                 {loading ? (
                   <>
@@ -797,7 +805,7 @@ const DashboardPage: React.FC = () => {
                   bgcolor: 'background.paper', 
                   borderRadius: 0, 
                   overflow: 'hidden',
-                  display: user?.role === 'MARKETING_STAFF' ? { xs: 'none', sm: 'block' } : 'block'
+                  display: (user?.role === 'MARKETING_STAFF' || user?.role === 'READ_ONLY' || user?.role === 'USER') ? { xs: 'none', sm: 'block' } : 'block'
                 }}>
                   <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -881,7 +889,7 @@ const DashboardPage: React.FC = () => {
             <Box sx={{ height: '100%', display: { xs: 'contents', lg: 'flex' }, flexDirection: 'column', gap: '1px', bgcolor: 'divider' }}>
               
                 {/* Upcoming Campaigns - Marketing & Admin */}
-                {(user?.role === 'ADMIN' || user?.role === 'MARKETING_MANAGER' || user?.role === 'MARKETING_STAFF' || user?.role === 'PROJECT_OWNER') && (
+                {(canManage(user?.role) || user?.role === 'MARKETING_STAFF' || user?.role === 'READ_ONLY' || user?.role === 'USER') && (
                   <Box sx={{ order: { xs: 3, lg: 'unset' }, bgcolor: 'background.paper', borderRadius: 0, p: 2.5 }}>
                     <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                       {loading ? <Skeleton width={200} /> : 'Yaklaşan Kampanyalar'}

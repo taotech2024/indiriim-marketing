@@ -1,10 +1,27 @@
-import React, { useState } from 'react';
-import { Box, Button, Chip, Stack, Step, StepLabel, Stepper, TextField, Typography } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Button,
+  Chip,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Step,
+  StepLabel,
+  Stepper,
+  TextField,
+  Typography,
+  Alert,
+  CircularProgress
+} from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import TablerIcon from '../components/Common/TablerIcon';
-
-type NotificationChannel = 'EMAIL' | 'SMS' | 'PUSH';
+import { fetchTemplates, type TemplateItem } from '../api/templates';
+import { fetchSegments, type SegmentItem } from '../api/segments';
+import { createNotification, type NotificationChannel } from '../api/notifications';
 
 type AudienceType = 'B2B' | 'B2C';
 
@@ -17,17 +34,67 @@ const NotificationCreatePage: React.FC = () => {
   const [step, setStep] = useState(0);
   const [channels, setChannels] = useState<NotificationChannel[]>(['EMAIL']);
   const [audienceType, setAudienceType] = useState<AudienceType>('B2C');
-  const [segmentName, setSegmentName] = useState('');
+  const [segmentId, setSegmentId] = useState<number | ''>('');
+  const [templateId, setTemplateId] = useState<number | ''>('');
   const [name, setName] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
   const [status, setStatus] = useState<PlanStatus>('DRAFT');
 
-  const isAdminOrOwner = user?.role === 'ADMIN' || user?.role === 'PROJECT_OWNER';
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [segments, setSegments] = useState<SegmentItem[]>([]);
+  const [loadingLists, setLoadingLists] = useState(true);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleChannel = (channel: NotificationChannel) => {
+  useEffect(() => {
+    Promise.all([fetchTemplates(), fetchSegments()])
+      .then(([t, s]) => {
+        setTemplates(t);
+        setSegments(s);
+        if (t.length > 0 && !templateId) setTemplateId(t[0].id);
+        if (s.length > 0 && !segmentId) setSegmentId(s[0].id);
+      })
+      .catch(() => setError('Şablon ve segment listesi yüklenemedi.'))
+      .finally(() => setLoadingLists(false));
+  }, []);
+
+  const channel: NotificationChannel = channels[0] ?? 'EMAIL';
+
+  const isAdminOrOwner =
+    user?.role === 'ADMIN' ||
+    user?.role === 'PROJECT_OWNER' ||
+    user?.role === 'MARKETING_MANAGER' ||
+    user?.role === 'MARKETING';
+
+  const toggleChannel = (ch: NotificationChannel) => {
     setChannels(prev =>
-      prev.includes(channel) ? prev.filter(c => c !== channel) : [...prev, channel]
+      prev.includes(ch) ? prev.filter(c => c !== ch) : [...prev, ch]
     );
+  };
+
+  const handleSubmit = async (newStatus: PlanStatus) => {
+    if (!name.trim() || segmentId === '' || templateId === '') {
+      setError('Lütfen kampanya adı, segment ve şablon seçin.');
+      return;
+    }
+    setError(null);
+    setSubmitLoading(true);
+    try {
+      await createNotification({
+        name: name.trim(),
+        templateId: templateId as number,
+        segmentId: segmentId as number,
+        channel,
+        scheduledAt: scheduleAt.trim() || undefined
+      });
+      navigate('/notifications');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        ?? (err instanceof Error ? err.message : 'Kampanya oluşturulamadı.');
+      setError(msg);
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   const handleNext = () => {
@@ -38,18 +105,6 @@ const NotificationCreatePage: React.FC = () => {
     setStep(prev => Math.max(prev - 1, 0));
   };
 
-  const handleSendForApproval = () => {
-    setStatus('PENDING_APPROVAL');
-  };
-
-  const handleReadyToSend = () => {
-    setStatus('READY_TO_SEND');
-  };
-
-  const handleFinish = () => {
-    navigate('/notifications');
-  };
-
   return (
     <Box sx={{ width: '100%', maxWidth: 960, mx: 'auto', py: 4 }}>
       <Typography variant="h5" sx={{ mb: 1.5, fontWeight: 600 }}>
@@ -58,6 +113,12 @@ const NotificationCreatePage: React.FC = () => {
       <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
         Kampanya veya transactional bildirim için kanal, hedef kitle ve zamanlama adımlarını tamamlayın.
       </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
 
       <Stepper activeStep={step} alternativeLabel sx={{ mb: 6 }}>
         <Step>
@@ -146,27 +207,40 @@ const NotificationCreatePage: React.FC = () => {
                 />
               </Stack>
             </Box>
-            <TextField
-              label="Segment Seçimi"
-              fullWidth
-              value={segmentName}
-              onChange={e => setSegmentName(e.target.value)}
-              placeholder="Örnek: Aktif B2C müşteriler"
-              helperText="Backoffice sisteminden gelen segmentler ile eşleştirme yapılır."
-            />
+            <FormControl fullWidth size="small" disabled={loadingLists}>
+              <InputLabel id="segment-label">Segment</InputLabel>
+              <Select
+                labelId="segment-label"
+                label="Segment"
+                value={segmentId}
+                onChange={e => setSegmentId(e.target.value === '' ? '' : Number(e.target.value))}
+              >
+                {segments.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Stack>
         )}
 
         {step === 2 && (
           <Stack spacing={3}>
+            <FormControl fullWidth size="small" disabled={loadingLists}>
+              <InputLabel id="template-label">Şablon</InputLabel>
+              <Select
+                labelId="template-label"
+                label="Şablon"
+                value={templateId}
+                onChange={e => setTemplateId(e.target.value === '' ? '' : Number(e.target.value))}
+              >
+                {templates.map((t) => (
+                  <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Box sx={{ p: 3, bgcolor: 'action.hover', borderRadius: 2, border: '1px dashed', borderColor: 'divider' }}>
-              <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <TablerIcon name="Template" size="sm" />
-                İçerik Yönetimi
-              </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Kanal bazlı içerik ayarları ve şablon seçimi "Şablonlar" ekranından yapılmaktadır.
-                Şu an sadece kampanya taslağını oluşturuyorsunuz.
+                İçerik detayları seçilen şablondan kullanılır.
               </Typography>
             </Box>
           </Stack>
@@ -226,29 +300,35 @@ const NotificationCreatePage: React.FC = () => {
                     <Button
                       variant="contained"
                       color="primary"
-                      onClick={handleSendForApproval}
-                      startIcon={<TablerIcon name="Send" size="sm" />}
+                      disabled={submitLoading}
+                      onClick={() => handleSubmit('PENDING_APPROVAL')}
+                      startIcon={submitLoading ? <CircularProgress size={16} /> : <TablerIcon name="Send" size="sm" />}
                     >
                       Onaya Gönder
                     </Button>
-                    <Button variant="outlined" onClick={handleFinish}>
+                    <Button variant="outlined" onClick={() => navigate('/notifications')} disabled={submitLoading}>
                       Kapat
                     </Button>
                   </>
                 ) : (
                   <>
-                    <Button variant="outlined" onClick={handleSendForApproval}>
+                    <Button
+                      variant="outlined"
+                      disabled={submitLoading}
+                      onClick={() => handleSubmit('PENDING_APPROVAL')}
+                    >
                       Onaya Gönder
                     </Button>
                     <Button
                       variant="contained"
                       color="primary"
-                      onClick={handleReadyToSend}
-                      startIcon={<TablerIcon name="Check" size="sm" />}
+                      disabled={submitLoading}
+                      onClick={() => handleSubmit('READY_TO_SEND')}
+                      startIcon={submitLoading ? <CircularProgress size={16} /> : <TablerIcon name="Check" size="sm" />}
                     >
                       Gönderime Hazır
                     </Button>
-                    <Button onClick={handleFinish}>
+                    <Button onClick={() => navigate('/notifications')} disabled={submitLoading}>
                       Kapat
                     </Button>
                   </>

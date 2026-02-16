@@ -1,26 +1,33 @@
-import React, { useState } from 'react';
-import { 
-  Box, 
-  Button, 
-  Card, 
-  CardContent, 
-  Divider, 
-  Grid, 
-  Stack, 
-  Switch, 
-  TextField, 
-  Typography, 
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Divider,
+  Grid,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
   FormControlLabel,
   Select,
   MenuItem,
   FormControl,
   InputLabel,
   Chip,
-  Alert
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import TablerIcon from '../components/Common/TablerIcon';
+import { fetchSettings, updateSettings, type FallbackRule } from '../api/settings';
 
 const SettingsPage: React.FC = () => {
+  const [loading, setLoading] = useState(true);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
   const [emailSettings, setEmailSettings] = useState({
     senderName: 'indiriim.com',
     senderEmail: 'no-reply@indiriim.com',
@@ -37,7 +44,7 @@ const SettingsPage: React.FC = () => {
     apiKey: '************************'
   });
 
-  const [fallbackRules, setFallbackRules] = useState([
+  const [fallbackRules, setFallbackRules] = useState<FallbackRule[]>([
     { id: 1, trigger: 'Push Başarısız', action: 'SMS Gönder', enabled: true },
     { id: 2, trigger: 'SMS Başarısız', action: 'Email Gönder', enabled: true },
     { id: 3, trigger: 'Email Başarısız', action: 'Raporla', enabled: true }
@@ -45,9 +52,74 @@ const SettingsPage: React.FC = () => {
 
   const [distributionSettings, setDistributionSettings] = useState({
     retryCount: 3,
-    retryDelay: 60, // seconds
+    retryDelay: 60,
     smartRouting: true
   });
+
+  useEffect(() => {
+    fetchSettings()
+      .then((s) => {
+        if (s.email) {
+          setEmailSettings(prev => ({
+            senderName: s.email!.senderName ?? prev.senderName,
+            senderEmail: s.email!.senderEmail ?? prev.senderEmail,
+            serviceProvider: s.email!.serviceProvider ?? prev.serviceProvider
+          }));
+        }
+        if (s.sms) {
+          setSmsSettings(prev => ({
+            provider: s.sms!.provider ?? prev.provider,
+            originator: s.sms!.originator ?? prev.originator
+          }));
+        }
+        if (s.push) {
+          setPushSettings(prev => ({
+            provider: s.push!.provider ?? prev.provider,
+            apiKey: s.push!.apiKey ?? prev.apiKey
+          }));
+        }
+        if (s.fallbackRules?.length) setFallbackRules(s.fallbackRules);
+        if (s.distribution) {
+          setDistributionSettings(prev => ({
+            retryCount: s.distribution!.retryCount ?? prev.retryCount,
+            retryDelay: s.distribution!.retryDelay ?? prev.retryDelay,
+            smartRouting: s.distribution!.smartRouting ?? prev.smartRouting
+          }));
+        }
+      })
+      .catch(() => setError('Ayarlar yüklenemedi.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setError(null);
+    setSuccess(false);
+    setSaveLoading(true);
+    try {
+      await updateSettings({
+        email: emailSettings,
+        sms: smsSettings,
+        push: pushSettings,
+        fallbackRules,
+        distribution: distributionSettings
+      });
+      setSuccess(true);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        ?? (err instanceof Error ? err.message : 'Kaydetme başarısız.');
+      setError(msg);
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -57,6 +129,17 @@ const SettingsPage: React.FC = () => {
       <Typography variant="body2" sx={{ mb: 4, color: 'text.secondary' }}>
         Kanal dağıtım motoru yapılandırması, sağlayıcı entegrasyonları ve fallback kuralları.
       </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(false)}>
+          Ayarlar kaydedildi.
+        </Alert>
+      )}
 
       <Grid container spacing={3}>
         {/* Distribution Engine & Fallback Rules - NEW SECTION */}
@@ -308,8 +391,14 @@ const SettingsPage: React.FC = () => {
                   type="number"
                 />
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                  <Button variant="contained" color="primary">
-                    Değişiklikleri Kaydet
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    disabled={saveLoading}
+                    onClick={handleSave}
+                    startIcon={saveLoading ? <CircularProgress size={20} /> : null}
+                  >
+                    {saveLoading ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
                   </Button>
                 </Box>
               </Stack>

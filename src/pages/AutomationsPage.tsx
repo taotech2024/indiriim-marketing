@@ -1,66 +1,22 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Box, Button, Typography, Chip, IconButton, Tooltip, Switch } from '@mui/material';
+import { Box, Button, Typography, Chip, IconButton, Tooltip, Alert } from '@mui/material';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import SkeletonTable from '../components/Common/SkeletonTable';
 import TablerIcon from '../components/Common/TablerIcon';
-
-type AutomationStatus = 'ACTIVE' | 'PAUSED' | 'DRAFT';
-
-interface AutomationItem {
-  id: number;
-  name: string;
-  trigger: string;
-  status: AutomationStatus;
-  stats: {
-    triggered: number;
-    completed: number;
-  };
-  lastRun: string;
-}
-
-const mockAutomations: AutomationItem[] = [
-  {
-    id: 1,
-    name: 'Sepet Terk Hatırlatması',
-    trigger: 'Sepette ürün bırakıldı (30dk)',
-    status: 'ACTIVE',
-    stats: { triggered: 1250, completed: 850 },
-    lastRun: '10 dk önce'
-  },
-  {
-    id: 2,
-    name: 'Hoşgeldin Serisi',
-    trigger: 'Yeni üye kaydı',
-    status: 'ACTIVE',
-    stats: { triggered: 3400, completed: 3100 },
-    lastRun: '2 dk önce'
-  },
-  {
-    id: 3,
-    name: 'Düşen Fiyat Alarmı',
-    trigger: 'Favori ürün fiyat düşüşü',
-    status: 'PAUSED',
-    stats: { triggered: 450, completed: 400 },
-    lastRun: '2 gün önce'
-  },
-  {
-    id: 4,
-    name: 'VIP Müşteri Kutlaması',
-    trigger: 'Toplam harcama > 5000₺',
-    status: 'DRAFT',
-    stats: { triggered: 0, completed: 0 },
-    lastRun: '-'
-  }
-];
+import { fetchAutomations, type AutomationItem, type AutomationStatus } from '../api/automations';
 
 const AutomationsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [automations, setAutomations] = useState<AutomationItem[]>([]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setLoading(false);
-    }, 800);
-    return () => clearTimeout(timeout);
+    setError(null);
+    setLoading(true);
+    fetchAutomations()
+      .then(setAutomations)
+      .catch(() => setError('Otomasyon listesi yüklenemedi.'))
+      .finally(() => setLoading(false));
   }, []);
 
   const columns = useMemo<MRT_ColumnDef<AutomationItem>[]>(
@@ -97,38 +53,27 @@ const AutomationsPage: React.FC = () => {
       },
       {
         header: 'Performans',
-        accessorFn: (row) => `${row.stats.triggered} / ${row.stats.completed}`,
-        Cell: ({ row }) => (
-          <Box>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {row.original.stats.triggered} Tetiklenme
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {row.original.stats.completed} Tamamlanma
-            </Typography>
-          </Box>
-        )
+        id: 'stats',
+        accessorFn: (row) => row.stats ? `${row.stats.triggered} / ${row.stats.completed}` : '—',
+        Cell: ({ row }) => {
+          const s = row.original.stats;
+          if (!s) return '—';
+          return (
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{s.triggered} Tetiklenme</Typography>
+              <Typography variant="caption" color="text.secondary">{s.completed} Tamamlanma</Typography>
+            </Box>
+          );
+        }
       },
       {
         header: 'Son Çalışma',
-        accessorKey: 'lastRun'
+        accessorKey: 'lastRun',
+        accessorFn: (row) => row.lastRun ?? '—'
       }
     ],
     []
   );
-
-  if (loading) {
-    return (
-      <Box sx={{ width: '100%' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-            Otomasyonlar
-          </Typography>
-        </Box>
-        <SkeletonTable rows={5} columns={5} />
-      </Box>
-    );
-  }
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -141,17 +86,23 @@ const AutomationsPage: React.FC = () => {
             Sepet, görüntüleme, satın alma ve üyelik tetikleyicilerine bağlı otomatik akışları yönetin.
           </Typography>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<TablerIcon name="Plus" />}
-        >
+        <Button variant="contained" startIcon={<TablerIcon name="Plus" />}>
           Yeni Otomasyon
         </Button>
       </Box>
 
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <SkeletonTable rows={5} columns={5} />
+      ) : (
       <MaterialReactTable
         columns={columns}
-        data={mockAutomations}
+        data={automations}
         enableColumnActions={false}
         enableColumnFilters={true}
         enableDensityToggle={false}
@@ -200,6 +151,7 @@ const AutomationsPage: React.FC = () => {
           }
         }}
       />
+      )}
     </Box>
   );
 };

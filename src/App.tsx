@@ -14,6 +14,7 @@ import NotificationCreatePage from './pages/NotificationCreatePage';
 import AIAssistantPage from './pages/AIAssistantPage';
 import AutomationsPage from './pages/AutomationsPage';
 import TablerIcon from './components/Common/TablerIcon';
+import ApiErrorSnackbar from './components/ApiErrorSnackbar';
 
 const ReportsPage: React.FC = () => (
   <Box sx={{ width: '100%' }}>
@@ -442,8 +443,9 @@ const App: React.FC = () => {
   return (
     <MuiThemeProvider theme={theme}>
       <CssBaseline />
+      <ApiErrorSnackbar />
       <div className={isDarkMode ? 'dark' : ''}>
-        <BrowserRouter>
+        <BrowserRouter basename={process.env.PUBLIC_PATH || '/'}>
           <AppContent />
         </BrowserRouter>
       </div>
