@@ -88,7 +88,7 @@ const NotificationsPage: React.FC = () => {
       {
         header: 'Segment',
         id: 'segment',
-        accessorFn: (row) => row.segmentName ?? row.segment ?? '—'
+        accessorFn: (row) => row.segmentName ?? '—'
       },
       {
         header: 'Durum',

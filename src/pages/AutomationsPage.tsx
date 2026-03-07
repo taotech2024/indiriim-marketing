@@ -28,13 +28,16 @@ const AutomationsPage: React.FC = () => {
       },
       {
         header: 'Tetikleyici',
-        accessorKey: 'trigger',
-        Cell: ({ cell }) => (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <TablerIcon name="Bolt" size="sm" color="warning" />
-            {cell.getValue<string>()}
-          </Box>
-        )
+        accessorFn: (row) => row.trigger?.type ?? '—',
+        Cell: ({ cell }) => {
+          const type = cell.getValue<string>();
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TablerIcon name="Bolt" size="sm" color="warning" />
+              <Typography variant="body2">{type}</Typography>
+            </Box>
+          );
+        }
       },
       {
         header: 'Durum',
