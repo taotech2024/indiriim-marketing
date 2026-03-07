@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { generateIdempotencyKey } from '../utils/idempotency';
 
 export type TemplateType = 'EMAIL' | 'SMS' | 'PUSH';
 
@@ -13,9 +14,37 @@ export interface TemplateItem {
   updatedAt?: string;
 }
 
-export async function fetchTemplates(): Promise<TemplateItem[]> {
-  const { data } = await apiClient.get<TemplateItem[]>('/api/v1/templates');
-  return Array.isArray(data) ? data : [];
+interface PageResponse<T> {
+  content?: T[];
+  totalElements?: number;
+  totalPages?: number;
+  number?: number;
+  size?: number;
+  first?: boolean;
+  last?: boolean;
+}
+
+export interface TemplatesListParams {
+  page?: number;
+  size?: number;
+}
+
+export async function fetchTemplates(params?: TemplatesListParams): Promise<TemplateItem[]> {
+  const query = {
+    page: params?.page ?? 0,
+    size: params?.size ?? 50,
+  };
+
+  const { data } = await apiClient.get<TemplateItem[] | PageResponse<TemplateItem>>(
+    '/api/v1/templates',
+    { params: query }
+  );
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.content ?? [];
 }
 
 export interface CreateTemplateRequest {
@@ -29,7 +58,15 @@ export interface CreateTemplateRequest {
 export interface UpdateTemplateRequest extends CreateTemplateRequest {}
 
 export async function createTemplate(body: CreateTemplateRequest): Promise<TemplateItem> {
-  const { data } = await apiClient.post<TemplateItem>('/api/v1/templates', body);
+  const { data } = await apiClient.post<TemplateItem>(
+    '/api/v1/templates',
+    body,
+    {
+      headers: {
+        'Idempotency-Key': generateIdempotencyKey(),
+      },
+    }
+  );
   return data;
 }
 

@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { generateIdempotencyKey } from '../utils/idempotency';
 
 export type NotificationChannel = 'EMAIL' | 'SMS' | 'PUSH';
 
@@ -17,7 +18,6 @@ export interface NotificationItem {
   status: NotificationStatus;
   scheduledAt: string | null;
   segmentName?: string;
-  segment?: string;
 }
 
 export interface NotificationsListParams {
@@ -31,15 +31,35 @@ export interface NotificationsListResponse {
   totalElements?: number;
 }
 
+interface PageResponse<T> {
+  content?: T[];
+  totalElements?: number;
+  totalPages?: number;
+  number?: number;
+  size?: number;
+  first?: boolean;
+  last?: boolean;
+}
+
 /** GET /api/v1/notifications - list with optional pagination/filter */
 export async function fetchNotifications(
   params?: NotificationsListParams
 ): Promise<NotificationItem[]> {
-  const { data } = await apiClient.get<NotificationItem[] | NotificationsListResponse>(
+  const query = {
+    page: params?.page ?? 0,
+    size: params?.size ?? 50,
+    status: params?.status,
+  };
+
+  const { data } = await apiClient.get<NotificationItem[] | PageResponse<NotificationItem>>(
     '/api/v1/notifications',
-    { params }
+    { params: query }
   );
-  if (Array.isArray(data)) return data;
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
   return data.content ?? [];
 }
 
@@ -64,6 +84,14 @@ export interface CreateNotificationResponse {
 export async function createNotification(
   body: CreateNotificationRequest
 ): Promise<CreateNotificationResponse> {
-  const { data } = await apiClient.post<CreateNotificationResponse>('/api/v1/notifications', body);
+  const { data } = await apiClient.post<CreateNotificationResponse>(
+    '/api/v1/notifications',
+    body,
+    {
+      headers: {
+        'Idempotency-Key': generateIdempotencyKey(),
+      },
+    }
+  );
   return data;
 }

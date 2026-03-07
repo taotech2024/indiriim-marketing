@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { generateIdempotencyKey } from '../utils/idempotency';
 
 export type SegmentType = 'B2B' | 'B2C';
 
@@ -14,9 +15,37 @@ export interface SegmentItem {
   updatedAt?: string;
 }
 
-export async function fetchSegments(): Promise<SegmentItem[]> {
-  const { data } = await apiClient.get<SegmentItem[]>('/api/v1/segments');
-  return Array.isArray(data) ? data : [];
+interface PageResponse<T> {
+  content?: T[];
+  totalElements?: number;
+  totalPages?: number;
+  number?: number;
+  size?: number;
+  first?: boolean;
+  last?: boolean;
+}
+
+export interface SegmentsListParams {
+  page?: number;
+  size?: number;
+}
+
+export async function fetchSegments(params?: SegmentsListParams): Promise<SegmentItem[]> {
+  const query = {
+    page: params?.page ?? 0,
+    size: params?.size ?? 50,
+  };
+
+  const { data } = await apiClient.get<SegmentItem[] | PageResponse<SegmentItem>>(
+    '/api/v1/segments',
+    { params: query }
+  );
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.content ?? [];
 }
 
 export interface CreateSegmentRequest {
@@ -31,7 +60,15 @@ export interface CreateSegmentRequest {
 export interface UpdateSegmentRequest extends CreateSegmentRequest {}
 
 export async function createSegment(body: CreateSegmentRequest): Promise<SegmentItem> {
-  const { data } = await apiClient.post<SegmentItem>('/api/v1/segments', body);
+  const { data } = await apiClient.post<SegmentItem>(
+    '/api/v1/segments',
+    body,
+    {
+      headers: {
+        'Idempotency-Key': generateIdempotencyKey(),
+      },
+    }
+  );
   return data;
 }
 
